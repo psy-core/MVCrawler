@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"log"
 	"github.com/psy-core/MVCrawler/entity"
+	"github.com/cihub/seelog"
 )
 
 // 获取种子列表
@@ -104,12 +105,25 @@ func getMVs(mvJsonUrls ...string) []entity.Mv {
 		}
 
 		if mv.AudioUrl != "" {
-			log.Printf("mv name %s add...\n", mv.Name)
+			log.Printf("mv name %s found...\n", mv.Name)
 			mvs = append(mvs, mv)
 		}
 	}
 
 	return mvs
+}
+
+func generateFileName(name, artist, audioUrl string) string {
+	filename := strings.Replace("www.yinyuetai.com_"+name+"_"+artist, "/", "", -1)
+	filename = strings.Replace(filename, "?", "", -1)
+	filename = strings.Replace(filename, "#", "", -1)
+	filename = strings.Replace(filename, "|", "", -1)
+	filename = strings.Replace(filename, "*", "", -1)
+	filename = strings.Replace(filename, ">", "", -1)
+	filename = strings.Replace(filename, "<", "", -1)
+	filename = strings.Replace(filename, " ", "", -1)
+	fileSuffix := audioUrl[strings.LastIndex(audioUrl, "."):]
+	return filename + fileSuffix
 }
 
 func downloadMvToDisk(pathdir string, proxy func(_ *http.Request) (*url.URL, error), mvs ...entity.Mv) {
@@ -125,16 +139,12 @@ func downloadMvToDisk(pathdir string, proxy func(_ *http.Request) (*url.URL, err
 			}
 			response = resp
 		}
-		filename := strings.Replace("www.yinyuetai.com_"+mv.Name+"_"+mv.Artist, "/", "", -1)
-		filename = strings.Replace(filename, "?", "", -1)
-		filename = strings.Replace(filename, "#", "", -1)
-		filename = strings.Replace(filename, "|", "", -1)
-		filename = strings.Replace(filename, "*", "", -1)
-		filename = strings.Replace(filename, ">", "", -1)
-		filename = strings.Replace(filename, "<", "", -1)
-		filename = strings.Replace(filename, " ", "", -1)
-		fileSuffix := mv.AudioUrl[strings.LastIndex(mv.AudioUrl, "."):]
 
+		filename := generateFileName(mv.Name, mv.Artist, mv.AudioUrl)
+
+		if response.StatusCode != 200 {
+			seelog.Errorf("%s download failed, response status code: %d, url:%s", filename, response.StatusCode, mv.AudioUrl)
+		}
 		content, err := ioutil.ReadAll(response.Body)
 		if err != nil {
 			cont, err1 := ioutil.ReadAll(response.Body)
@@ -144,11 +154,14 @@ func downloadMvToDisk(pathdir string, proxy func(_ *http.Request) (*url.URL, err
 			}
 			content = cont
 		}
-		ioutil.WriteFile(pathdir+filename+fileSuffix, content, 0666)
-		fmt.Printf("downloading mv %s ...\n", filename)
+		err = ioutil.WriteFile(pathdir+filename, content, 0666)
+		if err != nil {
+			log.Printf("Error, writeFile %s failed. skipped.\n", filename)
+			continue
+		}
+		fmt.Printf("download mv %s .\n", filename)
 	}
 }
-
 
 func CrawlOld() {
 	//生成组合标签
